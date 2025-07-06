@@ -1,217 +1,65 @@
-#include <ESP32Servo.h>
+#define BLYNK_TEMPLATE_ID "TMPL6ZTn_Zsqu"
+#define BLYNK_TEMPLATE_NAME "GestureCar"
+#define BLYNK_AUTH_TOKEN "k4bcB7giggrXs-e-yD1LjBGjOFYfamWk"
+
 #include <WiFi.h>
-#include <esp_now.h>
+#include <BlynkSimpleEsp32.h>
 
-typedef struct struct_message {
-  char carmove[20];
-  char action[20];
-  char armmove[20];
-} struct_message;
+// Blynk configuration
 
-struct_message gestureData;
-
-//LEFT
-int IN1 = 16;
-int IN2 = 17;
-int ENA = 4;
-//RIGHT
-int IN3 = 18;
-int IN4 = 19;
-int ENB = 5;
-
-//arm pins
-const int legServoPin = 27;  // You can use any PWM-capable GPIO
-const int soulderServoPin = 26;
-const int elboServoPin = 32;
-const int gripServoPin = 33;
-
-//ultrasonic sensor pin
-const int trigPin = 23;
-const int echoPin = 22;
-const int servorpin = 13;
-Servo ultrasonicSev;
-//for arms
-Servo legServo;
-Servo SoulderServo;
-Servo elboServo;
-Servo gripServo;
-// arm initial position
-int legPos = 90;
-int soulderPos = 80;
-int elbowPos = 90;
-int grapperPos = 2;
-
-int ultraPos = 90;
-//for battery percentage
+const char* WIFI_SSID = "Galaxy M31";
+const char* WIFI_PASS = "12345678";
 const int analogPin = 34;
-const float voltageDividerRatio = 4.74;
-
-//for light
-const int armLight = 25;
-const int carLight = 14;
 
 float globalDistance = 0.0;
+const int trigPin = 23;
+const int echoPin = 22;
+/* ---------- Wi‑Fi first ---------- */
+bool connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) delay(250);
+  Serial.printf("Wi‑Fi OK  (CH %d)\n", WiFi.channel());
+  if (WiFi.status() == WL_CONNECTED) {
+    return true;
+  }
+  return false;
+}
 
-unsigned long lastReceivedTime = 0;
-bool isConnected = false;
-#define TIMEOUT 500  // 2 seconds
-void onReceive(const uint8_t *mac, const uint8_t *data, int len) {
-  memcpy(&gestureData, data, sizeof(gestureData));
+/* ---------- Blynk service task on Core 0 ---------- */
+void blynkTask(void*) {
+  Blynk.config(BLYNK_AUTH_TOKEN);
 
-  lastReceivedTime = millis();
-  isConnected = true;
+  // First connection (blocking, but only once)
+  Blynk.connect(5000);  // 5 s timeout
 
-  String gesture = String(gestureData.carmove);
-  String armGesture = String(gestureData.armmove);
-  String action = String(gestureData.action);
-  Serial.print("Action : ");
-  Serial.print(action);
-
-  if (action == "car") {
-    Serial.print("\t Received Gesture: ");
-    Serial.println(gesture);
-    if (gesture == "R-225") {
-      turnRight(100);
-    } else if (gesture == "L-225") {
-      turnLeft(100);
-    } else if (gesture == "B-225") {
-      moveBackward(100);
-    } else if (gesture == "F-225") {
-      moveForward(100);
-    } else if (gesture == "R-150") {
-      turnRight(100);
-    } else if (gesture == "L-150") {
-      turnLeft(100);
-    } else if (gesture == "B-150") {
-      moveBackward(100);
-    } else if (gesture == "F-150") {
-      moveForward(100);
-    } else if (gesture == "R-125") {
-      turnRight(100);
-    } else if (gesture == "L-125") {
-      turnLeft(100);
-    } else if (gesture == "B-125") {
-      moveBackward(100);
-    } else if (gesture == "F-125") {
-      moveForward(100);
-    } else if (gesture == "R-100") {
-      turnRight(80);
-    } else if (gesture == "L-100") {
-      turnLeft(80);
-    } else if (gesture == "B-100") {
-      moveBackward(80);
-    } else if (gesture == "F-100") {
-      moveForward(80);
-    } else if (gesture == "R-80") {
-      turnRight(50);
-    } else if (gesture == "L-80") {
-      turnLeft(50);
-    } else if (gesture == "B-80") {
-      moveBackward(50);
-    } else if (gesture == "F-80") {
-      moveForward(50);
-    } else if (gesture == "STOP") {
-      stopMotors();
-    }
-  } else if (action == "arm") {
-    stopMotors();
-    Serial.print("\t leg: ");
-    Serial.print(legPos);
-    Serial.print("\t soulder: ");
-    Serial.print(soulderPos);
-    Serial.print("\t elbo: ");
-    Serial.print(elbowPos);
-    Serial.print("\t grip: ");
-    Serial.println(grapperPos);
-    Serial.print("\t Received Gesture: ");
-    Serial.println(armGesture);
-    if (armGesture == "LEFT") {
-      turnArmRight();
-    } else if (armGesture == "RIGHT") {
-      turnArmLeft();
-    } else if (armGesture == "BACKWARD-S") {
-      moveArmBackwardS();
-    } else if (armGesture == "FORWARD-S") {
-      moveArmForwardS();
-    } else if (armGesture == "OPEN") {
-      openGripper();
-    } else if (armGesture == "CLOSE") {
-      closeGripper();
-    } else if (armGesture == "BACKWARD-E") {
-      moveArmBackwardE();
-    } else if (armGesture == "FORWARD-E") {
-      moveArmForwardE();
-    }
-  } else {
-    stopMotors();
+  for (;;) {
+    Blynk.run();
+    // Serial.println("Blynk run");               // < 10 ms
+    if (!Blynk.connected()) Blynk.connect();  // auto‑reconnect
+    vTaskDelay(5 / portTICK_PERIOD_MS);       // yield 5 ms
   }
 }
+
 
 void setup() {
   Serial.begin(115200);
-  //for car
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
-  pinMode(ENA, OUTPUT);
-  pinMode(ENB, OUTPUT);
 
-  //for ultrasonic sensro
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
 
-
-  //for arm
-  legServo.setPeriodHertz(50);
-  legServo.attach(legServoPin);
-
-  SoulderServo.setPeriodHertz(50);
-  SoulderServo.attach(soulderServoPin);
-
-  elboServo.setPeriodHertz(50);
-  elboServo.attach(elboServoPin);
-
-  gripServo.setPeriodHertz(50);
-  gripServo.attach(gripServoPin);
-  //for ultrasonic servor
-  ultrasonicSev.setPeriodHertz(50);
-  ultrasonicSev.attach(servorpin);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("ESP-NOW init failed");
-
-    return;
-  }
-  // Start the battery monitor task
-  xTaskCreate(
-    batteryMonitorTask,
-    "Battery Monitor",
-    2048,
-    NULL,
-    1,
-    NULL);
-
-  esp_now_register_recv_cb(onReceive);
-  Serial.println("ESP-NOW Receiver Ready");
-}
-
-void loop() {
-  if (millis() - lastReceivedTime > TIMEOUT && isConnected) {
-    stopMotors();
-    isConnected = false;
-    Serial.println("ESP-NOW disconnect");
+  if (connectWiFi()) {
+    xTaskCreatePinnedToCore(blynkTask, "Blynk", 4096, NULL, 2, NULL, 0);
+    xTaskCreate(batteryMonitorTask, "Battery Monitor", 4096, NULL, 1, NULL);
   }
 
-  delay(100);  // small delay for efficiency
+  xTaskCreatePinnedToCore(ultrasonicTask, "US", 4096, NULL, 1, NULL, 0);
 }
-void batteryMonitorTask(void *pvParameters) {
+void batteryMonitorTask(void* pvParameters) {
+  Serial.print("Battery Voltage: ");
   while (true) {
     int rawADC = analogRead(analogPin);
-    float voltage = (rawADC / 4095.0) * 3.3 * voltageDividerRatio;
+    float voltage = (rawADC / 4095.0) * 3.3 * 4.74;
 
     int batteryPercent = getBatteryPercent(voltage);
 
@@ -219,161 +67,36 @@ void batteryMonitorTask(void *pvParameters) {
     Serial.print(voltage, 2);
     Serial.print(" V\tBattery %: ");
     Serial.println(batteryPercent);
-
-    vTaskDelay(60000 / portTICK_PERIOD_MS);  // Delay for 1 second
+    if (Blynk.connected()) {
+      Blynk.virtualWrite(V0, batteryPercent);
+    }
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
   }
-}
-
-
-float getDistance() {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  long duration = pulseIn(echoPin, HIGH);  // 30ms timeout (~5 meters)
-  float distance = duration * 0.034 / 2;
-
-
-  // globalDistance = distance;
-
-  Serial.print("Distance: ");
-  Serial.print(globalDistance);
-  Serial.println(" cm");
-
-  return distance;
-}
-
-
-void moveForward(int speed) {
-  ultrasonicSev.write(90);
-  if (getDistance() > 30) {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, HIGH);
-    digitalWrite(IN3, LOW);
-    digitalWrite(IN4, HIGH);
-    analogWrite(ENA, speed);
-    analogWrite(ENB, speed);
-  } else {
-    stopMotors();
-  }
-}
-
-void moveBackward(int speed) {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
-  analogWrite(ENA, speed);
-  analogWrite(ENB, speed);
-}
-
-void turnRight(int speed) {
-  ultraSonicRight();
-  if (getDistance() > 30) {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, HIGH);
-    digitalWrite(IN3, HIGH);
-    digitalWrite(IN4, LOW);
-    analogWrite(ENA, speed);
-    analogWrite(ENB, speed);
-  } else {
-    stopMotors();
-  }
-}
-
-void turnLeft(int speed) {
-  ultraSonicLeft();
-  if (getDistance() > 30) {
-    digitalWrite(IN1, HIGH);
-    digitalWrite(IN2, LOW);
-    digitalWrite(IN3, LOW);
-    digitalWrite(IN4, HIGH);
-    analogWrite(ENA, speed);
-    analogWrite(ENB, speed);
-  } else {
-    stopMotors();
-  }
-}
-
-void stopMotors() {
-
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
-  analogWrite(ENA, 0);
-  analogWrite(ENB, 0);
-}
-void ultraSonicRight() {
-
-  ultrasonicSev.write(30);
-}
-void ultraSonicLeft() {
-
-  ultrasonicSev.write(150);
 }
 int getBatteryPercent(float voltage) {
   if (voltage >= 16.8) return 100;
   if (voltage <= 12.0) return 0;
   return (int)((voltage - 12.0) * 100 / (16.8 - 12.0));
 }
+void ultrasonicTask(void* pv) {
+  for (;;) {
+    // Trigger pulse
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
 
-void turnArmRight() {
-  if (legPos < 180) {
-    legPos++;
-    legServo.write(legPos);
-    delay(30);
+    long dur = pulseIn(echoPin, HIGH, 30000);        // timeout 30 ms
+    if (dur > 0) globalDistance = dur * 0.0343 / 2;  // cm
+    if (Blynk.connected()) {
+      Blynk.virtualWrite(V1, globalDistance);
+    }
+    Serial.print(" V\distance %: ");
+    Serial.println(globalDistance);
+    vTaskDelay(50 / portTICK_PERIOD_MS);  // 20 Hz update
   }
 }
-void turnArmLeft() {
-  if (legPos > 0) {
-    legPos--;
-    legServo.write(legPos);
-    delay(30);
-  }
-}
-
-void moveArmBackwardS() {
-  if (soulderPos > 80) {
-    soulderPos--;
-    SoulderServo.write(soulderPos);
-    delay(20);
-  }
-}
-void moveArmForwardS() {
-  if (soulderPos < 174) {
-    soulderPos++;
-    SoulderServo.write(soulderPos);
-    delay(20);
-  }
-}
-void moveArmBackwardE() {
-  if (elbowPos < 180) {
-    elbowPos++;
-    elboServo.write(elbowPos);
-    delay(20);
-  }
-}
-void moveArmForwardE() {
-  if (elbowPos > 90) {
-    elbowPos--;
-    elboServo.write(elbowPos);
-    delay(20);
-  }
-}
-void openGripper() {
-
-  if (grapperPos < 58) {
-    grapperPos++;
-    gripServo.write(grapperPos);
-    delay(20);
-  }
-}
-void closeGripper() {
-  if (grapperPos > 2) {
-    grapperPos--;
-    gripServo.write(grapperPos);
-    delay(20);
-  }
+void loop() {
+  // other robot logic (motors / gesture) here
 }
