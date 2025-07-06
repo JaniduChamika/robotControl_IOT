@@ -1,3 +1,7 @@
+const char *WIFI_SSID = "Galaxy M31";
+const char *WIFI_PASS = "12345678";
+#define WIFI_CHANNEL 1
+
 #include <ESP8266WiFi.h>
 #include <espnow.h>
 #include <Wire.h>
@@ -6,7 +10,7 @@
 //arm & car switching button
 const int buttonPin = 0;
 int lastButtonState = HIGH;
-int buttonCount = -1  ;
+int buttonCount = -1;
 
 //for arm
 const int armBtnPin = 2;
@@ -37,11 +41,13 @@ void setup() {
   pinMode(armBtnPin, INPUT_PULLUP);
 
   WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS, WIFI_CHANNEL);
   WiFi.disconnect();
 
   if (!mpu.begin()) {
     Serial.println("MPU6050 not connected!");
-    while (1);
+    while (1)
+      ;
   }
   Serial.println("MPU6050 ready!");
 
@@ -49,14 +55,16 @@ void setup() {
     Serial.println("ESP-NOW init failed!");
     return;
   }
+
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
   Serial.print("Accelerometer range set to: 8G");
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   Serial.print("Filter bandwidth set to: 21Hz");
 
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-  esp_now_add_peer(receiverMac, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+  esp_now_add_peer(receiverMac, ESP_NOW_ROLE_SLAVE, WIFI_CHANNEL, NULL, 0);
   esp_now_register_send_cb(onSent);
+
 }
 
 void loop() {
